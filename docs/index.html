@@ -1,0 +1,462 @@
+---
+title: "High Hopes: A Data-Driven Deep Dive into Washington’s Cannabis Market (2024–2025)"
+author: "Franklin Johnson via yourweeddata.com"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+source("install_packages_if_missing.R")
+
+# # Load packages for this example
+# required_packages <- c(
+#   "tidyverse", "lubridate", "dplyr", "tidytext", "scales",
+#   "forcats", "stringr", "tsibble", "feasts", "fable", "fabletools",
+#   "readr", "ggplot2", "magrittr", "stopwords", "ggh4x", "tidyr"
+# )
+# 
+# # Function to install if not already
+# install_if_missing <- function(pkg) {
+#   if (!requireNamespace(pkg, quietly = TRUE)) {
+#     message(paste0("Installing missing package: ", pkg))
+#     install.packages(pkg, dependencies = TRUE)
+#   } else {
+#     message(paste0("✅ Already installed: ", pkg))
+#   }
+# }
+# 
+# # Iterate through all required packages
+# invisible(lapply(required_packages, install_if_missing))
+# 
+# # Load them into the session
+# lapply(required_packages, library, character.only = TRUE)
+
+```
+Since the legalization of recreational cannabis in Washington, the Washington State Liquor and Cannabis Board (WSLCB) has tracked every bud, edible, and pre-roll in the market. What better time to explore a sample of these Jan 2024– Feb 2025 transactions than the high holiday of #TidyTuesday? 
+
+This 420-day dataset sample is cleaned and anonymized. It contains 50,000 sales transactions, covering January 2024 to March 2025. On aggregate and use of 'floor_date()' during the data processing for #TidyTuesday format, the time range ends up "2024-01-01" to "2025-02-01". We still employ the lubridate package and use 'floor_date()' throughout this example as a debugging step to keep the date column exactly how it should be for this example pipeline and for sanity purpose of course; so we don't need to view the data often.   
+
+We’ll take a quick tour through:
+
+🏪 Top-grossing licensees
+
+🌱 Strain-level text analysis (with tf-idf!)
+
+📈 Time series decomposition & forecasting by product category and strain type - an "indy" workspace - a call to action for you to try #tidyverse and #tidytext sets of functions on your own.
+
+Let’s blaze a trail through the data we'll call, "wa_canna".
+
+```{r}
+#Load the data
+dataset_url <- "https://raw.githubusercontent.com/Ensign-Analytics/tidytuesday/wa-cannabis/data/curated/wa-cannabis/wa_cannabis_sample.csv"
+
+wa_canna <- readr::read_csv(dataset_url, show_col_types = FALSE)
+
+```
+
+Grind it down ... what’s this dataset really made of?
+```{r include=TRUE}
+#NOT RUN
+# Pop the jar, take a look: time to size up the stash.
+#names(wa_canna)
+# Take a whiff of the dataset — what’re we working with?
+#str(wa_canna)
+# Scope the strain string: let’s eyeball the goods.
+#head(wa_canna, 1)
+# Let’s crack open the dates for sanity purposes.
+#range(wa_canna$sale_date_month)
+
+```
+
+💸 Who’s Making Green? (Top 5 Retailers)
+```{r}
+
+wa_canna %>%
+  group_by(licensee_dba) %>%
+  summarise(total_sales = sum(retail_sales_amt, na.rm = TRUE)) %>%
+  arrange(desc(total_sales)) %>%
+  slice_head(n = 5) %>%
+  ggplot(aes(reorder(licensee_dba, total_sales), total_sales)) +
+  geom_col(fill = "#6A994E") +
+  scale_y_continuous(labels = dollar_format()) +
+  coord_flip() +
+  labs(title = "Top 5 Licensees in Washington by Retail Sales", x = NULL, y = "Sales ($)") +
+  theme_minimal(base_size = 9)
+
+# Optional: Save the plot
+#ggsave("plots/top_licensees_sales.png", width = 8, height = 5)
+
+```
+
+🌿 What’s in a Name? (TF-IDF for Strain Names)
+```{r}
+
+# Pull the top 5 licensees by total retail sales
+top_5_licensees <- wa_canna %>%
+  group_by(licensee_dba) %>%
+  summarise(total_sales = sum(retail_sales_amt, na.rm = TRUE)) %>%
+  slice_max(total_sales, n = 5) %>%
+  pull(licensee_dba)
+
+# Filter for just those licensees
+filtered_wa <- wa_canna %>%
+  filter(licensee_dba %in% top_5_licensees)
+
+# Tokenize and clean text from strain_name
+tfidf_data <- filtered_wa %>%
+  unnest_tokens(word, strain_name) %>%
+  filter(!str_detect(word, "^\\d+$")) %>%            # Remove pure numbers
+  filter(!word %in% stop_words$word) %>%             # Remove common stop words
+  count(licensee_dba, word, sort = TRUE) %>%
+  bind_tf_idf(word, licensee_dba, n)
+
+# STEP 4: Get top 5 terms by TF-IDF per licensee
+top_terms <- tfidf_data %>%
+  group_by(licensee_dba) %>%
+  slice_max(tf_idf, n = 5, with_ties = FALSE) %>%
+  ungroup()
+
+# STEP 5: Plot as faceted bar chart
+ggplot(top_terms, aes(x = fct_reorder(word, tf_idf), y = tf_idf, fill = licensee_dba)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ licensee_dba, scales = "free_y") +
+  coord_flip() +
+  labs(title = "Top TF-IDF Terms of Cannabis Strain Names at Top 5 Washington Licensees",
+       x = "Term", y = "TF-IDF Score") +
+  theme_minimal(base_size = 8)
+
+# Optional: Save the plot
+#ggsave("plots/tfidf_terms.png", width = 8, height = 5)
+
+```
+🚬 Curious about product names? Go back and supplant "strain_name" with "product_name" and add scripts to remove special characters (-*&^%$#@?) and numbers and units (e.g. 1oz) using regex for some dank tf-idf analysis.
+
+Because I'm kind ... check your answer against mine.
+```{r}
+
+# Clean + tokenize product_name
+tfidf_data <- filtered_wa %>%
+  mutate(product_name = str_to_lower(product_name)) %>%
+  mutate(product_name = str_replace_all(product_name, "\\d+(\\.\\d+)?\\s*(g|gram|grams|oz|ounce|ounces|mg|lb|lbs)", "")) %>% # remove units like 1g, 3.5g, etc.
+  mutate(product_name = str_replace_all(product_name, "[^a-zA-Z\\s]", "")) %>%  # remove special characters
+  unnest_tokens(word, product_name) %>%
+  filter(!word %in% stop_words$word) %>%
+  filter(!word %in% stopwords::stopwords("en")) %>%  # extended stopword filter
+  filter(str_detect(word, "[a-z]")) %>%              # keep only actual words
+  count(licensee_dba, word, sort = TRUE) %>%
+  bind_tf_idf(word, licensee_dba, n)
+
+# Grab top 5 TF-IDF terms for each licensee
+top_terms <- tfidf_data %>%
+  group_by(licensee_dba) %>%
+  slice_max(tf_idf, n = 5, with_ties = FALSE) %>%
+  ungroup()
+
+# Faceted bar plot
+ggplot(top_terms, aes(x = fct_reorder(word, tf_idf), y = tf_idf, fill = licensee_dba)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ licensee_dba, scales = "free_y") +
+  coord_flip() +
+  labs(title = "Top TF-IDF Terms in Product Names (Cleaned)",
+       subtitle = "Special characters, units, and numbers removed",
+       x = "Term", y = "TF-IDF Score") +
+  theme_minimal(base_size = 7)
+
+# Optional: Save the plot
+# ggsave("plots/tfidf_cleaned_terms.png", width = 8, height = 5)
+
+```
+
+📅 Monthly Sales: A Time Series Buzz
+```{r}
+
+# Create time series of total sales by month
+monthly_sales <- wa_canna %>%
+  mutate(month = floor_date(sale_date_month, unit = "month")) %>%
+  group_by(month) %>%
+  summarise(retail_sales_amt = sum(retail_sales_amt, na.rm = TRUE)) %>%
+  ungroup()
+
+# Convert to tsibble (time-aware tibble)
+monthly_ts <- monthly_sales %>%
+  as_tsibble(index = month)
+
+# Fill any missing months (explicitly handle gaps)
+monthly_ts_filled <- monthly_ts %>%
+  fill_gaps(.full = TRUE) %>%
+  mutate(retail_sales_amt = ifelse(is.na(retail_sales_amt), 0, retail_sales_amt))
+
+# STL decomposition model
+stl_model <- monthly_ts_filled %>%
+  model(STL(retail_sales_amt))
+
+# Extract components and plot
+components <- stl_model %>%
+  components()
+
+autoplot(components) +
+  labs(title = "STL Decomposition of Monthly Cannabis Retail Sales")
+
+# Optional: Save the plot
+#ggsave("plots/stl_decomposition.png", width = 8, height = 5)
+
+```
+
+🧪 Decompose by Inventory Category
+```{r}
+
+# Aggregate by month + category/strain
+# By Product Category
+category_ts <- wa_canna %>%
+ mutate(month = yearmonth(floor_date(sale_date_month, unit = "month"))) %>%
+  group_by(month, inventory_type_category) %>%
+  summarise(retail_sales_amt = sum(retail_sales_amt, na.rm = TRUE), .groups = "drop") %>%
+  as_tsibble(index = month, key = inventory_type_category) %>%
+  fill_gaps(retail_sales_amt = 0)
+
+#Seasonal decomposition
+# STL by Category
+stl_category <- category_ts %>%
+  model(STL(retail_sales_amt ~ trend(window = 7) + season(window = "periodic")))
+
+# Debugging step
+glimpse(components(stl_category))
+
+# Decomposition Components
+category_components <- components(stl_category) %>%
+  mutate(season_adjust = retail_sales_amt - remainder)
+
+# Drop model for legend clarity
+category_long <- components(stl_category) %>%
+  filter(inventory_type_category != "Miscellaneous") %>%
+  pivot_longer(cols = c(trend, remainder, season_adjust), names_to = "component", values_to = "value")
+
+# Remove .model from aes() inside autoplot
+ggplot(category_long, aes(x = month, y = value, group = interaction(component, inventory_type_category))) +
+  geom_line(color = "#198754", linewidth = 0.8, lineend = "round") +
+  facet_grid(component ~ inventory_type_category, scales = "free_y") +
+  scale_y_continuous(labels = dollar_format()) +
+  labs(
+    title = "STL Components by Product Category",
+    x = NULL, y = "Retail Sales"
+  ) +
+  theme_minimal(base_size = 7) +
+  theme(strip.text = element_text(face = "bold"),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Optional: Save the plot
+#ggsave("plots/stl_decomposition_category.png", width = 8, height = 5)
+
+
+```
+
+🧪 Decompose by Strain Type
+```{r}
+
+# By Strain Type
+strain_ts <- wa_canna %>%
+  mutate(month = floor_date(sale_date_month, unit = "month")) %>%
+  mutate(month = yearmonth(month)) %>%
+  group_by(month, strain_type) %>%
+  summarise(retail_sales_amt = sum(retail_sales_amt, na.rm = TRUE), .groups = "drop") %>%
+  as_tsibble(index = month, key = strain_type) %>%
+  fill_gaps(retail_sales_amt = 0) %>%
+  na.omit()
+
+# Refining tool! 
+# Use to focus only on top 5 categories or strains
+# top_strains <- wa_filtered %>%
+#   count(strain_type, sort = TRUE) %>%
+#   slice_head(n = 5) %>%
+#   pull(strain_type)
+# 
+# strain_ts <- strain_ts %>% filter(strain_type %in% top_strains)
+
+# STL by Strain
+stl_strain <- strain_ts %>%
+  model(STL(retail_sales_amt ~ trend(window = 7) + season(window = "periodic")))
+
+strain_components <- components(stl_strain)
+
+strain_long <- strain_components %>%
+  pivot_longer(cols = c(trend, remainder, season_adjust), 
+               names_to = "component", 
+               values_to = "value") %>%
+  filter(strain_type != "Miscellaneous")
+
+ggplot(strain_long, aes(x = month, y = value, group = interaction(component, strain_type))) +
+  geom_line(color = "#6A994E", linewidth = 0.8) +
+  facet_grid(component ~ strain_type, scales = "free_y") +
+  scale_y_continuous(labels = dollar_format()) +
+  labs(
+    title = "STL Decomposition by Strain Type",
+    x = NULL, y = "Retail Sales"
+  ) +
+  theme_minimal(base_size = 9) +
+  theme(strip.text = element_text(face = "bold"),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Optional: Save the plot
+#ggsave("plots/stl_decomposition_strain_type.png", width = 8, height = 5)
+
+```
+
+🌱 Forecast the Future: Category Edition
+```{r}
+
+# Optional: Focus on Top 5 Categories
+# top_categories <- wa_filtered %>%
+#   count(inventory_type_category, wt = retail_sales_amt, sort = TRUE) %>%
+#   slice_head(n = 5) %>%
+#   pull(inventory_type_category)
+# 
+# category_ts <- category_ts %>%
+#   filter(inventory_type_category %in% top_categories)
+
+# For the full sample dataset
+category_ts_filtered <- category_ts %>%
+  group_by(inventory_type_category) %>%
+  filter(n() >= 2) %>%
+  ungroup()
+
+category_model <- category_ts_filtered %>%
+  model(
+    ets = ETS(retail_sales_amt))
+
+```
+🔮 These sales are highly seasonal. Get ready to stock up every 4/20 and summer solstice.
+
+
+🌱 Forecast the Next 6 Months for each Inventory Type
+```{r}
+
+# IMPORTANT! Correct the Date column format. Use category_ts_filtered instead of creating a new object. For this example, we create a new object with corrected date column. 
+category_ts_fixed <- category_ts_filtered %>%
+    as_tsibble(index = month, key = inventory_type_category)
+
+category_forecasts <- forecast(category_model, h = "6 months")
+
+autoplot(category_forecasts, category_ts_fixed) +
+  labs(
+    title = "Forecasted Cannabis Sales by Category",
+    x = "Month",
+    y = "Retail Sales (USD)"
+  ) +
+  scale_y_continuous(labels = dollar_format()) +
+  facet_wrap(~inventory_type_category, scales = "free_y") +
+  theme_minimal(base_size = 10) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Optional: Save the plot
+#ggsave("plots/fable_forecast_category.png", width = 8, height = 5)
+
+```
+Roll up your own take — now it's your sesh. Repeat above steps to forecast strain name, product name, or inventory sub-category.
+
+🌿 Bonus Nugget
+Passing the TF-IDF n-grams bong (Multi-word Strain Names). In the above TF-IDF on strain name facetted plot, I noticed "Dream" and thought where's "Blue Dream"? For this reason, I checked n-grams = 3.5 (hehe) to get longer strain names for better strain identification and quality output. Let's see if "Super Silver Haze" shows up in the plot? You can try n = 5 to see how changing 'n' matters. 
+```{r}
+
+# Load stop words
+data("stop_words")
+
+# 🔥 Bonus TF-IDF: Bigrams from strain_name
+bigram_tfidf <- filtered_wa %>%
+  # Create bigrams from strain_name
+  unnest_tokens(bigram, strain_name, token = "ngrams", n = 3.5) %>% # when you pass a decimal, it gets silently coerced to an integer under the hood (e.g., floor(n) or as.integer(n)). It's not an issue to put 3.5, just know n = 3.
+  
+  # Remove bigrams with numbers or units (like 1g, 1oz)
+  filter(!str_detect(bigram, "\\b\\d+(mg|g|oz|lb)?\\b")) %>%
+  
+  # Remove special characters
+  mutate(bigram = str_replace_all(bigram, "[^a-zA-Z\\s]", "")) %>%
+  
+  # Split and remove stopwords from each part of bigram
+  separate(bigram, into = c("word1", "word2"), sep = " ", fill = "right") %>%
+  filter(!word1 %in% stop_words$word,
+         !word2 %in% stop_words$word) %>%
+  
+  # Recombine cleaned bigram
+  unite(bigram, word1, word2, sep = " ") %>%
+  count(licensee_dba, bigram, sort = TRUE) %>%
+  bind_tf_idf(bigram, licensee_dba, n)
+
+# Get top 5 bigrams per licensee
+top_bigrams <- bigram_tfidf %>%
+  group_by(licensee_dba) %>%
+  slice_max(tf_idf, n = 5, with_ties = FALSE) %>%
+  ungroup()
+
+# Plot results 💥
+ggplot(top_bigrams, aes(x = fct_reorder(bigram, tf_idf), y = tf_idf, fill = licensee_dba)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ licensee_dba, scales = "free_y") +
+  coord_flip() +
+  labs(
+    title = "Top TF-IDF Bigrams from Strain Names",
+    subtitle = "Multi-word cannabis strains that stand out per top licensee",
+    x = "Strain Bigram", y = "TF-IDF Score"
+  ) +
+  theme_minimal(base_size = 10)
+
+# Optional save
+#ggsave("plots/stl_strain_type_decomposition.png", width = 10, height = 6)
+
+```
+
+"For the Gram of It: Let's build a comparative TF-IDF table of top terms by n-gram size for strain_name — specifically for the Top 5 WA cannabis licensees.
+```{r}
+
+# Helper function to compute tf-idf for any n-gram
+get_tfidf_by_ngram <- function(data, n) {
+  data %>%
+    mutate(strain_name = str_to_lower(strain_name)) %>%
+    unnest_tokens(ngram, strain_name, token = "ngrams", n = n) %>%
+    filter(!str_detect(ngram, "^\\d+$")) %>% # remove pure numbers
+    filter(!str_detect(ngram, "\\d")) %>%    # remove mixed digits (like 1g, 3.5g)
+    filter(!str_detect(ngram, "\\b(g|mg|oz|lb|gram|grams|ml|pack)\\b")) %>%
+    filter(!ngram %in% stop_words$word) %>%
+    count(licensee_dba, ngram, sort = TRUE) %>%
+    bind_tf_idf(ngram, licensee_dba, n) %>%
+    group_by(licensee_dba) %>%
+    slice_max(tf_idf, n = 5, with_ties = FALSE) %>%
+    ungroup() %>%
+    mutate(n_gram = paste0(n, "-gram"))
+}
+
+# Generate tf-idf results for 1, 2, 3-grams
+unigrams <- get_tfidf_by_ngram(filtered_wa, n = 1)
+bigrams  <- get_tfidf_by_ngram(filtered_wa, n = 2)
+trigrams <- get_tfidf_by_ngram(filtered_wa, n = 3)
+
+# Combine
+ngram_results <- bind_rows(unigrams, bigrams, trigrams)
+
+# Make a comparison table
+ngram_table <- ngram_results %>%
+  select(licensee_dba, n_gram, ngram, tf_idf) %>%
+  arrange(licensee_dba, n_gram, desc(tf_idf)) %>%
+  group_by(licensee_dba, n_gram) %>%
+  mutate(rank = row_number()) %>%
+  pivot_wider(names_from = n_gram, values_from = ngram) %>%
+  select(licensee_dba, rank, `1-gram`, `2-gram`, `3-gram`)
+
+# Show the table
+print(ngram_table, n = 50)
+
+```
+
+📝 Closing Thoughts
+The Washington cannabis market is a hotbox of trends and data-rich opportunities. Whether you’re curious about strain branding, retailer dynamics, or market timing — even this small sample dataset offers plenty of insight for kind-folks to roll up.
+
+Stay lit 🔥 — and don't forget: legalize data analysis.
+
+```{r}
+
+sessionInfo()
+
+```
+
+```{r}
