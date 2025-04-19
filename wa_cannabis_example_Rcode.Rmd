@@ -1,7 +1,7 @@
 ---
 title: "High Hopes: A Data-Driven Deep Dive into Washington’s Cannabis Market (2024–2025)"
 author: "Franklin Johnson via yourweeddata.com"
-#### `r Sys.Date()` • *Got a minute?*
+date: "4-19-2025 • *Got a minute?*"
 output: html_document
 ---
 
