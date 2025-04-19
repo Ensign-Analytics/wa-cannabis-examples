@@ -1,7 +1,7 @@
 ---
 title: "High Hopes: A Data-Driven Deep Dive into Washington’s Cannabis Market (2024–2025)"
 author: "Franklin Johnson via yourweeddata.com"
-date: "`r Sys.Date()' # Got a minute?"
+#### `r Sys.Date()` • *Got a minute?*
 output: html_document
 ---
 
@@ -34,6 +34,7 @@ source("install_packages_if_missing.R")
 # lapply(required_packages, library, character.only = TRUE)
 
 ```
+🌿 Puff, Puff, Plot: Cannabis Sales in WA
 Since the legalization of recreational cannabis in Washington, the Washington State Liquor and Cannabis Board (WSLCB) has tracked every bud, edible, and pre-roll in the market. What better time to explore a sample of these Jan 2024– Feb 2025 transactions than the high holiday of #TidyTuesday? 
 
 This 420-day dataset sample is cleaned and anonymized. It contains 50,000 sales transactions, covering January 2024 to March 2025. On aggregate and use of 'floor_date()' during the data processing for #TidyTuesday format, the time range ends up "2024-01-01" to "2025-02-01". We still employ the lubridate package and use 'floor_date()' throughout this example as a debugging step to keep the date column exactly how it should be for this example pipeline and for sanity purpose of course; so we don't need to view the data often.   
@@ -228,9 +229,11 @@ glimpse(components(stl_category))
 category_components <- components(stl_category) %>%
   mutate(season_adjust = retail_sales_amt - remainder)
 
+removed_cats <- c( "Miscellaneous", "Waste/Other Materials", "Unclassified", "Mixes", "Topicals" )
+
 # Drop model for legend clarity
 category_long <- components(stl_category) %>%
-  filter(inventory_type_category != "Miscellaneous") %>%
+  filter(!inventory_type_category %in% removed_cats) %>%
   pivot_longer(cols = c(trend, remainder, season_adjust), names_to = "component", values_to = "value")
 
 # Remove .model from aes() inside autoplot
@@ -257,8 +260,7 @@ ggplot(category_long, aes(x = month, y = value, group = interaction(component, i
 
 # By Strain Type
 strain_ts <- wa_canna %>%
-  mutate(month = floor_date(sale_date_month, unit = "month")) %>%
-  mutate(month = yearmonth(month)) %>%
+  mutate(month = yearmonth(floor_date(sale_date_month, unit = "month"))) %>%
   group_by(month, strain_type) %>%
   summarise(retail_sales_amt = sum(retail_sales_amt, na.rm = TRUE), .groups = "drop") %>%
   as_tsibble(index = month, key = strain_type) %>%
@@ -283,8 +285,7 @@ strain_components <- components(stl_strain)
 strain_long <- strain_components %>%
   pivot_longer(cols = c(trend, remainder, season_adjust), 
                names_to = "component", 
-               values_to = "value") %>%
-  filter(strain_type != "Miscellaneous")
+               values_to = "value") 
 
 ggplot(strain_long, aes(x = month, y = value, group = interaction(component, strain_type))) +
   geom_line(color = "#6A994E", linewidth = 0.8) +
