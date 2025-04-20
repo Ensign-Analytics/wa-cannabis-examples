@@ -334,21 +334,23 @@ category_model <- category_ts_filtered %>%
 ```{r}
 
 # IMPORTANT! Correct the Date column format. Use category_ts_filtered instead of creating a new object. For this example, we create a new object with corrected date column. 
-category_ts_fixed <- category_ts_filtered %>%
-    as_tsibble(index = month, key = inventory_type_category)
 
 category_forecasts <- forecast(category_model, h = "6 months")
 
-autoplot(category_forecasts, category_ts_fixed) +
+autoplot(category_forecasts, category_ts_filtered) +
   labs(
     title = "Forecasted Cannabis Sales by Category",
+    subtitle = "Model: ETS | Horizon: 6 Months",
     x = "Month",
     y = "Retail Sales (USD)"
   ) +
   scale_y_continuous(labels = dollar_format()) +
   facet_wrap(~inventory_type_category, scales = "free_y") +
   theme_minimal(base_size = 10) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none"
+  )
 
 # Optional: Save the plot
 #ggsave("plots/fable_forecast_category.png", width = 8, height = 5)
