@@ -1,8 +1,8 @@
 # Required packages for wa-cannabis-examples
 required_packages <- c(
-  "tidyverse", "lubridate", "tidytext", "scales",
-  "forcats", "stringr", "tsibble", "feasts", "fable",
-  "readr", "ggplot2", "magrittr"
+  "tidyverse", "lubridate", "dplyr", "tidytext", "scales",
+     "forcats", "stringr", "tsibble", "feasts", "fable", "fabletools", "fable.prophet",
+     "readr", "ggplot2", "magrittr", "stopwords", "ggh4x", "tidyr"
 )
 
 # Function to install if not already

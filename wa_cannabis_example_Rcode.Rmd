@@ -13,7 +13,7 @@ source("install_packages_if_missing.R")
 # # Load packages for this example
 # required_packages <- c(
 #   "tidyverse", "lubridate", "dplyr", "tidytext", "scales",
-#   "forcats", "stringr", "tsibble", "feasts", "fable", "fabletools",
+#   "forcats", "stringr", "tsibble", "feasts", "fable", "fabletools", "fable.prophet",
 #   "readr", "ggplot2", "magrittr", "stopwords", "ggh4x", "tidyr"
 # )
 # 
@@ -454,10 +454,94 @@ The Washington cannabis market is a hotbox of trends and data-rich opportunities
 
 Stay lit 🔥 — and don't forget: legalize data analysis.
 
+Just like you wouldn’t buy a pre-roll without knowing the strain, you shouldn’t forecast retail activity without modeling uncertainty. Enter the Prophet. It doesn't predict your zodiac vibes, but it does give probabilistic forecasts that adapt to trend shifts and seasonality — perfect for a market as dynamic as weed.
+
+*Hash is the New Encore*: Bayesian Time Series Forecast using Prophet
+```{r}
+
+# Step 1: Identify top 2 selling product categories
+top_categories <- wa_canna %>%
+  count(inventory_type_category, wt = retail_sales_amt, sort = TRUE) %>%
+  slice_head(n = 2) %>%
+  pull(inventory_type_category)
+
+# Step 2: Filter time series for just those categories
+category_ts_bayes <- category_ts %>%
+  filter(inventory_type_category %in% top_categories)
+
+# Step 3: Clean for valid time series modeling (at least 2 non-zero entries)
+category_ts_bayes_clean <- category_ts_bayes %>%
+  group_by(inventory_type_category) %>%
+  filter(sum(!is.na(retail_sales_amt) & retail_sales_amt > 0) >= 2) %>%
+  ungroup()
+
+# Step 4: Fit NNETAR model (Bayesian-like neural net autoregression)
+category_bayes_model <- category_ts_bayes_clean %>%
+  model(
+    bayes = NNETAR(retail_sales_amt)
+  )
+
+# Step 5: Forecast next 6 months with confidence intervals
+category_forecasts <- forecast(category_bayes_model, h = "6 months", level = c(80, 95))
+
+# Step 6: Check if confidence levels exist in forecast
+if (".level" %in% colnames(category_forecasts)) {
+  
+  # Step 6a: Convert forecast to wider format for plotting ribbons
+  plot_data <- category_forecasts %>%
+    filter(.model == "bayes") %>%   # Optional if other models exist
+    as_tibble() %>%
+    filter(.level %in% c(80, 95)) %>%
+    select(month, inventory_type_category, .mean, .lower, .upper, .level) %>%
+    pivot_wider(
+      names_from = .level,
+      values_from = c(.lower, .upper),
+      names_glue = "{.value}_{.level}"
+    )
+
+  # Step 7: Bring in historical data
+  hist_data <- category_ts_bayes_clean %>%
+    select(month, inventory_type_category, retail_sales_amt)
+
+  # Step 8: Plot forecast with ribbons
+  ggplot(plot_data, aes(x = month, y = .mean)) +
+    geom_ribbon(aes(ymin = .lower_95, ymax = .upper_95), fill = "#B0E0E6", alpha = 0.3) +
+    geom_ribbon(aes(ymin = .lower_80, ymax = .upper_80), fill = "#ADD8E6", alpha = 0.5) +
+    geom_line(color = "#1f77b4", size = 1) +
+    geom_line(data = hist_data, aes(x = month, y = retail_sales_amt), color = "darkgreen") +
+    facet_wrap(~inventory_type_category, scales = "free_y") +
+    scale_y_continuous(labels = dollar_format()) +
+    labs(
+      title = "Bayesian Forecasts of Cannabis Sales (Top 2 Categories)",
+      subtitle = "Forecasts with 80% and 95% Confidence Intervals",
+      x = "Month", y = "Retail Sales (USD)"
+    ) +
+    theme_minimal(base_size = 9)
+  
+} else {
+  # Step 9: Fallback for models that do NOT support CIs (e.g., NNETAR in some settings)
+  autoplot(category_forecasts, category_ts_bayes_clean) +
+    facet_wrap(~inventory_type_category, scales = "free_y") +
+    labs(
+      title = "Bayesian Forecasts of Cannabis Sales (Top 2 Categories)",
+      subtitle = "Confidence intervals not available from this model",
+      x = "Month", y = "Retail Sales (USD)"
+    ) +
+    scale_y_continuous(labels = dollar_format()) +
+    theme_minimal(base_size = 9) +
+    theme(legend.position = "none")
+}
+
+```
+
+🌿 Ultimate Cannabis Vibe Recap:
+"Forecasting the future of Washington weed, are you? We’ve got high hopes and higher confidence intervals. With neural nets peeking six months ahead, it’s like your favorite strain — smooth, adaptive, and slightly unpredictable." 😎🔥
+
+Let me know if you'd like the same treatment for strain-level decomposition and forecasting
+
+Session Information
 ```{r}
 
 sessionInfo()
 
 ```
-
-```{r}
