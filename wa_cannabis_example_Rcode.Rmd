@@ -360,8 +360,9 @@ autoplot(category_forecasts, category_ts_filtered) +
 ```
 Roll up your own take — now it's your sesh. Repeat above steps to forecast strain name, product name, or inventory sub-category.
 
-🌿 Bonus Nugget
-Passing the TF-IDF n-grams bong (Multi-word Strain Names). In the above TF-IDF on strain name facetted plot, I noticed "Dream" and thought where's "Blue Dream"? For this reason, I checked n-grams = 3.5 (hehe) to get longer strain names for better strain identification and quality output. Let's see if "Super Silver Haze" shows up in the plot? You can try n = 5 to see how changing 'n' matters. 
+🌿 Bonus Nugget: Passing the TF-IDF n-grams (multi-word strain names). 
+
+In the above TF-IDF on strain name facetted plot, I noticed "Dream" and thought where's "Blue Dream"? For this reason, I checked n-grams = 3.5 (hehe) to get longer strain names for better strain identification and quality output. Let's see if "Super Silver Haze" shows up in the plot? You can try n = 5 to see how changing 'n' matters. 
 ```{r}
 
 # Load stop words
@@ -454,6 +455,7 @@ print(ngram_table, n = 50)
 ```
 
 📝 Closing Thoughts
+
 The Washington cannabis market is a hotbox of trends and data-rich opportunities. Whether you’re curious about strain branding, retailer dynamics, or market timing — even this small sample dataset offers plenty of insight for kind-folks to roll up.
 
 Stay lit 🔥 — and don't forget: legalize data analysis.
@@ -539,9 +541,8 @@ if (".level" %in% colnames(category_forecasts)) {
 ```
 
 🌿 Ultimate Cannabis Vibe Recap:
-"Forecasting the future of Washington weed, are you? We’ve got high hopes and higher confidence intervals. With neural nets peeking six months ahead, it’s like your favorite strain — smooth, adaptive, and slightly unpredictable." 😎🔥
 
-Let yourweeddata.com know if you'd like the same treatment for strain-level decomposition and forecasting
+Forecasting the future of Washington weed, are you? We’ve got high hopes and higher confidence intervals. With neural nets peeking six months ahead, it’s like your favorite strain — smooth, adaptive, and slightly unpredictable.😎🔥
 
 Session Information
 ```{r}
